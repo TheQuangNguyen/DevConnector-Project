@@ -3,6 +3,8 @@ const router = express.Router();
 const { check, validationResult } = require("express-validator");
 const gravatar = require("gravatar");
 const bcrypt = require("bcryptjs");
+const jwt = require("jsonwebtoken");
+const config = require("config");
 
 const User = require("../../models/User");
 
@@ -38,7 +40,9 @@ router.post(
 
       // if the user already exist in database, then return 400 and return error message
       if (user) {
-        res.status(400).json({ errors: [{ msg: "User already exist" }] });
+        return res
+          .status(400)
+          .json({ errors: [{ msg: "User already exist" }] });
       }
 
       // Get users gravatar
@@ -66,8 +70,26 @@ router.post(
       await user.save();
 
       // Return jsonwebtoken to front end for user to log in right away after registering
+      const payload = {
+        user: {
+          // get id from the newly created user by mongoose
+          id: user.id
+        }
+      };
 
-      res.send("User registered");
+      jwt.sign(
+        payload,
+        config.get("jwtSecret"),
+        { expiresIn: 360000 },
+        // if there is error return error, if not return the token
+        (err, token) => {
+          if (err) {
+            throw err;
+          } else {
+            res.json({ token });
+          }
+        }
+      );
     } catch (err) {
       console.error(err.message);
       res.status(500).send("server error");
