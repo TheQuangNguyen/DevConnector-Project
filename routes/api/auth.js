@@ -3,6 +3,7 @@ const router = express.Router();
 const auth = require("../../middleware/auth");
 const jwt = require("jsonwebtoken");
 const config = require("config");
+const bcrypt = require("bcryptjs");
 const { check, validationResult } = require("express-validator");
 
 const User = require("../../models/User");
@@ -20,15 +21,15 @@ router.get("/", auth, async (req, res) => {
   }
 });
 
-// @route     GET api/auth
-// @desc      Authenticate user @ get token
+// @route     POST api/auth
+// @desc      Authenticate user and get token
 // @access    Public
 router.post(
   "/",
   // validate the input and report any errors before creating the user
   [
     check("email", "Please include a valid email").isEmail(),
-    check("password", "Password is required").isLength({ min: 6 })
+    check("password", "Password is required").exists()
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -38,42 +39,27 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, email, password } = req.body;
+    const { email, password } = req.body;
 
     try {
       // see if the user exists
       let user = await User.findOne({ email });
 
-      // if the user already exist in database, then return 400 and return error message
-      if (user) {
+      // if the user do not exists, then return 400 and return error message
+      if (!user) {
         return res
           .status(400)
-          .json({ errors: [{ msg: "User already exist" }] });
+          .json({ errors: [{ msg: "Invalid Credentials" }] });
       }
 
-      // Get users gravatar
-      const avatar = gravatar.url(email, {
-        // default size
-        s: "200",
-        // rating
-        r: "pg",
-        // default image
-        d: "mm"
-      });
+      // Checks if the password the user inputs match the one in the database
+      const isMatch = await bcrypt.compare(password, user.password);
 
-      user = new User({
-        name,
-        email,
-        avatar,
-        password
-      });
-
-      // Encrypt password using bCrypt
-      const salt = await bcrypt.genSalt(10);
-
-      user.password = await bcrypt.hash(password, salt);
-
-      await user.save();
+      if (!isMatch) {
+        return res
+          .status(400)
+          .json({ errors: [{ msg: "Invalid Credentials" }] }); // it is good idea to have the same error message for invalid token and non matching password for security purposes since hackers cannot tell if there is no user or the password is wrong
+      }
 
       // Return jsonwebtoken to front end for user to log in right away after registering
       const payload = {
@@ -98,7 +84,7 @@ router.post(
       );
     } catch (err) {
       console.error(err.message);
-      res.status(500).send("server error");
+      res.status(500).send("Server Error");
     }
   }
 );
